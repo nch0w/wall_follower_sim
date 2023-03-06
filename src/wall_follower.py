@@ -12,11 +12,11 @@ class WallFollower:
     # Import ROS parameters from the "params.yaml" file.
     # Access these variables in class functions with self:
     # i.e. self.CONSTANT
-    SCAN_TOPIC = rospy.get_param("wall_follower/scan_topic")
-    DRIVE_TOPIC = rospy.get_param("wall_follower/drive_topic")
-    SIDE = rospy.get_param("wall_follower/side")
-    VELOCITY = rospy.get_param("wall_follower/velocity")
-    DESIRED_DISTANCE = rospy.get_param("wall_follower/desired_distance")
+    SCAN_TOPIC = "/scan" #rospy.get_param("wall_follower/scan_topic")
+    DRIVE_TOPIC = "/vesc/ackermann_cmd_mux/input/navigation" # rospy.get_param("wall_follower/drive_topic")
+    SIDE = 1 #rospy.get_param("wall_follower/side")
+    VELOCITY = 0.5 #rospy.get_param("wall_follower/velocity")
+    DESIRED_DISTANCE = 0.5 #1 #rospy.get_param("wall_follower/desired_distance")
     WALL_TOPIC = "/wall"
     prev_error = None
 
@@ -49,7 +49,7 @@ class WallFollower:
 
         # mask out the ranges we care about
         if self.SIDE == 1:
-            mask = (range_angles > (-np.pi/3)) & (range_angles < (np.pi/2)) & (ranges < 4)
+            mask = (range_angles > (-np.pi/3)) & (range_angles < np.pi/2) & (ranges < 2)
         else:
             mask = (range_angles < (np.pi/3)) & (range_angles > -(np.pi/2))  & (ranges < 4)
 
@@ -59,14 +59,6 @@ class WallFollower:
             else:
                 mask = (range_angles < (np.pi/3)) & (range_angles > -(np.pi/2))
         
-        # if we're too close, just go forward
-        if np.min(ranges) < 0.2:
-            drive_msg = AckermannDriveStamped()
-            drive_msg.drive.speed = self.VELOCITY
-            drive_msg.drive.steering_angle = 0.0
-            self.drive_pub.publish(drive_msg)
-            return
-
         range_vectors = range_vectors[mask]
 
         xs = np.vstack((range_vectors[:, 0], np.ones(range_vectors.shape[0]))).T
@@ -93,6 +85,7 @@ class WallFollower:
 
         VisualizationTools.plot_line([0, x_mid], [0, y_mid], self.line_pub, frame="/laser")
         actual_dist = np.sqrt(x_mid**2 + y_mid**2)
+        rospy.loginfo(actual_dist)
 
         dist_error = actual_dist - self.DESIRED_DISTANCE
 
@@ -117,11 +110,11 @@ class WallFollower:
 
         # PID controller to make robot reach desired distance from wall
         kP = 4
-        kD = 1
-        kP_angle = 1
+        kD = 0 #2 #1
+        kP_angle = 0 #1
 
         angle_error = -np.arctan2(m, 1)
-        rospy.loginfo("angle_error: " + str(angle_error))
+        #rospy.loginfo("angle_error: " + str(angle_error))
 
         # drive_msg = AckermannDriveStamped()
         drive_msg.drive.steering_angle = np.clip(-kP_angle * angle_error + (-kP) * dist_error * (-self.SIDE) + kD * (dist_error - self.prev_error), -0.34, 0.34)
@@ -136,6 +129,10 @@ class WallFollower:
         # drive_msg.drive.speed = 0
 
         # publish the drive message
+
+        if msg.ranges[50] < 1.5:
+            drive_msg.drive.steering_angle = -2 * self.SIDE 
+
         self.drive_pub.publish(drive_msg)
 
 
@@ -143,3 +140,4 @@ if __name__ == "__main__":
     rospy.init_node('wall_follower')
     wall_follower = WallFollower()
     rospy.spin()
+
